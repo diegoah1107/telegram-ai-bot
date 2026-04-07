@@ -33,7 +33,7 @@ bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text || "";
 
-  // 🚨 límite
+  // 🚨 límite mensual
   if (totalTokens > MAX_TOKENS) {
     bot.sendMessage(chatId, "⚠️ Límite mensual alcanzado (~$7 USD)");
     return;
@@ -58,12 +58,10 @@ Dame:
 - errores
 - mejoras
 - código corregido
-
-Responde directo.
 `;
   }
 
-  // 🔧 FIX (MEJORADO CON DIFF)
+  // 🔧 FIX
   else if (text.startsWith("/fix")) {
     prompt = `
 Corrige este código.
@@ -78,9 +76,35 @@ ${text.replace("/fix", "")}
 `;
   }
 
-  // 📘 EXPLICAR
+  // 🧠 EDIT (NUEVO PRO)
+  else if (text.startsWith("/edit")) {
+    let code = "";
+
+    // si incluye github
+    if (text.includes("github.com") && text.includes("/blob/")) {
+      code = await getGitHubFile(text);
+    }
+
+    prompt = `
+Eres un ingeniero senior.
+
+Modifica este código según la instrucción.
+
+Devuelve:
+1. Código nuevo completo
+2. Cambios en formato diff
+3. Explicación corta
+
+${code ? "Código:\n" + code : ""}
+
+Instrucción:
+${text.replace("/edit", "")}
+`;
+  }
+
+  // 📘 EXPLAIN
   else if (text.startsWith("/explain")) {
-    prompt = "Explica este código de forma simple:\n" + text.replace("/explain", "");
+    prompt = "Explica este código fácil:\n" + text.replace("/explain", "");
   }
 
   // ⚡ NORMAL
@@ -92,7 +116,11 @@ ${text.replace("/fix", "")}
   let model = "gpt-5-nano";
   let maxTokens = 300;
 
-  if (text.includes("github.com") || text.startsWith("/fix")) {
+  if (
+    text.includes("github.com") ||
+    text.startsWith("/fix") ||
+    text.startsWith("/edit")
+  ) {
     model = "gpt-5-mini";
     maxTokens = 600;
   }
