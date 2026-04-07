@@ -14,12 +14,18 @@ const PORT = process.env.PORT || 3000;
 let totalTokens = 0;
 const MAX_TOKENS = 200000;
 
-// 🔥 LEER ARCHIVOS DE GITHUB
+// 🔥 LEER ARCHIVOS DE GITHUB (ARREGLADO)
 async function getGitHubFile(url) {
   try {
-    const rawUrl = url
-      .replace("https://github.com/", "https://raw.githubusercontent.com/")
-      .replace("/blob/", "/");
+    let rawUrl = url;
+
+    if (url.includes("github.com")) {
+      rawUrl = url
+        .replace("github.com", "raw.githubusercontent.com")
+        .replace("/blob/", "/");
+    }
+
+    console.log("RAW URL:", rawUrl);
 
     const res = await fetch(rawUrl);
 
@@ -28,7 +34,11 @@ async function getGitHubFile(url) {
       return null;
     }
 
-    return await res.text();
+    const text = await res.text();
+
+    // 🔥 LIMITAR TAMAÑO (IMPORTANTE)
+    return text.substring(0, 4000);
+
   } catch (err) {
     console.log("Fetch error:", err);
     return null;
@@ -48,17 +58,19 @@ bot.on("message", async (msg) => {
 
     let prompt = "";
 
-    // 🔧 EDIT
+    // 🔧 EDIT (GITHUB)
     if (text.startsWith("/edit")) {
       const match = text.match(/https?:\/\/[^\s]+/);
+      const url = match ? match[0].trim() : null;
+
       let code = null;
 
-      if (match) {
-        code = await getGitHubFile(match[0]);
+      if (url) {
+        code = await getGitHubFile(url);
       }
 
       if (!code) {
-        bot.sendMessage(chatId, "❌ No pude leer el archivo. Verifica el link.");
+        bot.sendMessage(chatId, "❌ No pude leer el archivo. Verifica que el link sea correcto y público.");
         return;
       }
 
@@ -100,7 +112,7 @@ ${text.replace("/fix", "")}
       prompt = "Explica este código:\n" + text.replace("/explain", "");
     }
 
-    // 🌐 GITHUB
+    // 🌐 ANALIZAR GITHUB
     else if (text.includes("github.com")) {
       const match = text.match(/https?:\/\/[^\s]+/);
       let code = null;
@@ -118,6 +130,7 @@ Dame errores y mejoras.
 `;
     }
 
+    // ⚡ NORMAL
     else {
       prompt = "Responde como programador experto:\n" + text;
     }
@@ -131,7 +144,7 @@ Dame errores y mejoras.
       max_output_tokens: maxTokens,
     });
 
-    const reply = response.output_text || "No hubo respuesta";
+    const reply = response.output_text || "Error 😢";
 
     bot.sendMessage(chatId, reply);
 
