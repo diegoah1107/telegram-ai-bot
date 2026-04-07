@@ -27,3 +27,15 @@ bot.on('message', async (msg) => {
     bot.sendMessage(chatId, "Error 😢");
   }
 });
+const express = require("express");
+const app = express();
+
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("Bot activo 🚀");
+});
+
+app.listen(PORT, () => {
+  console.log("Servidor web corriendo en puerto " + PORT);
+});
