@@ -66,7 +66,7 @@ Responde directo sin relleno.
     const response = await openai.responses.create({
       model: model,
       input: prompt,
-      max_output_tokens: 300,
+      max_output_tokens: 600,
     });
 
     // 💰 sumar tokens
