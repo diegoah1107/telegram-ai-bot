@@ -33,13 +33,15 @@ bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text || "";
 
+  // 🚨 límite
   if (totalTokens > MAX_TOKENS) {
-    bot.sendMessage(chatId, "⚠️ Límite mensual alcanzado");
+    bot.sendMessage(chatId, "⚠️ Límite mensual alcanzado (~$7 USD)");
     return;
   }
 
   let prompt = "";
 
+  // 🔥 GITHUB
   if (text.includes("github.com")) {
     let code = "";
 
@@ -48,24 +50,45 @@ bot.on("message", async (msg) => {
     }
 
     prompt = `
-Actúa como programador experto.
+Actúa como ingeniero senior.
 
-${code ? "Analiza este código:\n" + code : "Analiza este repo: " + text}
+${code ? "Analiza este código:\n" + code : "Analiza este repositorio: " + text}
 
-Dame errores y mejoras.
+Dame:
+- errores
+- mejoras
+- código corregido
+
 Responde directo.
 `;
   }
+
+  // 🔧 FIX (MEJORADO CON DIFF)
   else if (text.startsWith("/fix")) {
-    prompt = "Corrige este código:\n" + text.replace("/fix", "");
-  } 
-  else if (text.startsWith("/explain")) {
-    prompt = "Explica este código:\n" + text.replace("/explain", "");
-  } 
-  else {
-    prompt = text;
+    prompt = `
+Corrige este código.
+
+Devuelve:
+1. Código corregido
+2. Explicación corta
+3. Cambios en formato diff
+
+Código:
+${text.replace("/fix", "")}
+`;
   }
 
+  // 📘 EXPLICAR
+  else if (text.startsWith("/explain")) {
+    prompt = "Explica este código de forma simple:\n" + text.replace("/explain", "");
+  }
+
+  // ⚡ NORMAL
+  else {
+    prompt = "Responde como programador experto:\n" + text;
+  }
+
+  // ⚡ MODELO INTELIGENTE
   let model = "gpt-5-nano";
   let maxTokens = 300;
 
@@ -90,8 +113,8 @@ Responde directo.
     bot.sendMessage(chatId, reply);
 
   } catch (err) {
-    console.log(err);
-    bot.sendMessage(chatId, "Error 😢");
+    console.log("ERROR:", err);
+    bot.sendMessage(chatId, "Error 😢 revisa logs");
   }
 });
 
