@@ -57,16 +57,18 @@ Responde directo sin relleno.
 
   // ⚡ MODELO HÍBRIDO
   let model = "gpt-5-nano";
+  let maxTokens = 300;
 
   if (text.includes("github.com") || text.startsWith("/fix")) {
     model = "gpt-5-mini";
+    maxTokens = 600;
   }
 
   try {
     const response = await openai.responses.create({
       model: model,
       input: prompt,
-      max_output_tokens: 600,
+      max_output_tokens: maxTokens,
     });
 
     // 💰 sumar tokens
