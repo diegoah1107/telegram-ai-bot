@@ -2,6 +2,7 @@ require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
 const OpenAI = require("openai");
 const express = require("express");
+const fetch = require("node-fetch");
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -12,6 +13,20 @@ const PORT = process.env.PORT || 3000;
 // 💰 CONTROL DE COSTO
 let totalTokens = 0;
 const MAX_TOKENS = 200000; // aprox $7 USD
+
+// 🔥 FUNCIÓN PARA LEER ARCHIVOS DE GITHUB
+async function getGitHubFile(url) {
+  try {
+    const rawUrl = url
+      .replace("github.com", "raw.githubusercontent.com")
+      .replace("/blob/", "/");
+
+    const res = await fetch(rawUrl);
+    return await res.text();
+  } catch (err) {
+    return null;
+  }
+}
 
 // 🔥 BOT
 bot.on("message", async (msg) => {
@@ -26,18 +41,23 @@ bot.on("message", async (msg) => {
 
   let prompt = "";
 
-  // 🔥 DETECTAR GITHUB
+  // 🔥 GITHUB (repos o archivos)
   if (text.includes("github.com")) {
+    let code = "";
+
+    if (text.includes("/blob/")) {
+      code = await getGitHubFile(text);
+    }
+
     prompt = `
 Actúa como ingeniero senior.
 
-Analiza este repositorio: ${text}
+${code ? "Aquí está el código:\n" + code : "Analiza este repositorio: " + text}
 
 Dame:
-- Qué hace
-- Errores
-- Mejoras
-- Código ejemplo
+- errores
+- mejoras
+- código corregido
 
 Responde directo sin relleno.
 `;
@@ -55,7 +75,7 @@ Responde directo sin relleno.
     prompt = "Responde como programador experto:\n" + text;
   }
 
-  // ⚡ MODELO HÍBRIDO
+  // ⚡ MODELO HÍBRIDO + TOKENS INTELIGENTES
   let model = "gpt-5-nano";
   let maxTokens = 300;
 
