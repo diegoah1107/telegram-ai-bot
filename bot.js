@@ -1,26 +1,16 @@
-const TelegramBot = require('node-telegram-bot-api');
-const OpenAI = require('openai');
-require('dotenv').config({ path: './.env' });
-console.log("API KEY:", process.env.OPENAI_API_KEY);
+require("dotenv").config();
+const TelegramBot = require("node-telegram-bot-api");
+const OpenAI = require("openai");
+const express = require("express");
+
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-bot.on('message', async (msg) => {
-  const chatId = msg.chat.id;
-  const text = msg.text;
-
-  if (!text) return;
-
-  try {
-    const response = await openai.responses.create({
-      model: "gpt-4o-mini",
-      input: text,
-    });
-
-  bot.on("message", async (msg) => {
+// 🔥 BOT TELEGRAM
+bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
 
@@ -40,23 +30,22 @@ bot.on('message', async (msg) => {
   }
 
   try {
-    const completion = await openai.chat.completions.create({
+    const response = await openai.responses.create({
       model: "gpt-5-mini",
-      messages: [{ role: "user", content: prompt }],
+      input: prompt,
     });
 
-    bot.sendMessage(chatId, completion.choices[0].message.content);
+    const reply = response.output[0].content[0].text;
+
+    bot.sendMessage(chatId, reply);
 
   } catch (err) {
     console.log(err);
     bot.sendMessage(chatId, "Error 😢");
   }
-});});
-const express = require("express");
-const app = express();
+});
 
-const PORT = process.env.PORT || 3000;
-
+// 🌐 SERVIDOR PARA RENDER
 app.get("/", (req, res) => {
   res.send("Bot activo 🚀");
 });
