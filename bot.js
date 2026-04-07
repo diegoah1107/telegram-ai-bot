@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 // 🔥 BOT TELEGRAM
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
-  const text = msg.text;
+  const text = msg.text || "";
 
   let prompt = "";
 
@@ -35,17 +35,30 @@ bot.on("message", async (msg) => {
       input: prompt,
     });
 
-    const reply = response.output[0].content[0].text;
+    // 🔥 Manejo seguro de respuesta
+    let reply = "No pude generar respuesta 😢";
+
+    if (response.output && response.output.length > 0) {
+      const content = response.output[0].content;
+
+      if (content && content.length > 0) {
+        if (content[0].text) {
+          reply = content[0].text;
+        } else if (content[0].type === "output_text") {
+          reply = content[0].text || reply;
+        }
+      }
+    }
 
     bot.sendMessage(chatId, reply);
 
   } catch (err) {
-    console.log(err);
-    bot.sendMessage(chatId, "Error 😢");
+    console.log("ERROR OPENAI:", err);
+    bot.sendMessage(chatId, "Error 😢 revisa logs");
   }
 });
 
-// 🌐 SERVIDOR PARA RENDER
+// 🌐 SERVIDOR PARA RENDER (IMPORTANTE)
 app.get("/", (req, res) => {
   res.send("Bot activo 🚀");
 });
