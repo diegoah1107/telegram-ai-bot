@@ -35,30 +35,18 @@ bot.on("message", async (msg) => {
       input: prompt,
     });
 
-    // 🔥 Manejo seguro de respuesta
-    let reply = "No pude generar respuesta 😢";
-
-    if (response.output && response.output.length > 0) {
-      const content = response.output[0].content;
-
-      if (content && content.length > 0) {
-        if (content[0].text) {
-          reply = content[0].text;
-        } else if (content[0].type === "output_text") {
-          reply = content[0].text || reply;
-        }
-      }
-    }
+    // 🔥 forma correcta de obtener respuesta
+    const reply = response.output_text || "No pude generar respuesta 😢";
 
     bot.sendMessage(chatId, reply);
 
   } catch (err) {
-    console.log("ERROR OPENAI:", err);
+    console.log("ERROR:", err);
     bot.sendMessage(chatId, "Error 😢 revisa logs");
   }
 });
 
-// 🌐 SERVIDOR PARA RENDER (IMPORTANTE)
+// 🌐 SERVIDOR PARA RENDER
 app.get("/", (req, res) => {
   res.send("Bot activo 🚀");
 });
