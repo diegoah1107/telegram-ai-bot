@@ -2,7 +2,8 @@ require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
 const OpenAI = require("openai");
 const express = require("express");
-const fetch = require("node-fetch");
+const fs = require("fs");
+const path = require("path");
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -10,39 +11,23 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 💰 CONTROL DE COSTO
-let totalTokens = 0;
-const MAX_TOKENS = 200000;
+// 📂 FUNCIÓN PARA BUSCAR ARCHIVO
+function findFile(fileName, dir = ".") {
+  const files = fs.readdirSync(dir);
 
-// 🔥 LEER ARCHIVOS DE GITHUB (ARREGLADO)
-async function getGitHubFile(url) {
-  try {
-    let rawUrl = url;
+  for (let file of files) {
+    const fullPath = path.join(dir, file);
+    const stat = fs.statSync(fullPath);
 
-    if (url.includes("github.com")) {
-      rawUrl = url
-        .replace("github.com", "raw.githubusercontent.com")
-        .replace("/blob/", "/");
+    if (stat.isDirectory()) {
+      const result = findFile(fileName, fullPath);
+      if (result) return result;
+    } else if (file === fileName) {
+      return fullPath;
     }
-
-    console.log("RAW URL:", rawUrl);
-
-    const res = await fetch(rawUrl);
-
-    if (!res.ok) {
-      console.log("GitHub error:", res.status);
-      return null;
-    }
-
-    const text = await res.text();
-
-    // 🔥 LIMITAR TAMAÑO (IMPORTANTE)
-    return text.substring(0, 4000);
-
-  } catch (err) {
-    console.log("Fetch error:", err);
-    return null;
   }
+
+  return null;
 }
 
 // 🤖 BOT
@@ -51,106 +36,67 @@ bot.on("message", async (msg) => {
   const text = msg.text || "";
 
   try {
-    if (totalTokens > MAX_TOKENS) {
-      bot.sendMessage(chatId, "⚠️ Límite mensual alcanzado");
-      return;
-    }
-
-    let prompt = "";
-
-    // 🔧 EDIT (GITHUB)
+    // 🔧 EDIT INTELIGENTE
     if (text.startsWith("/edit")) {
-      const match = text.match(/https?:\/\/[^\s]+/);
-      const url = match ? match[0].trim() : null;
 
-      let code = null;
+      const match = text.match(/archivo:\s*(\S+)/i);
+      const fileName = match ? match[1] : null;
 
-      if (url) {
-        code = await getGitHubFile(url);
-      }
-
-      if (!code) {
-        bot.sendMessage(chatId, "❌ No pude leer el archivo. Verifica que el link sea correcto y público.");
+      if (!fileName) {
+        bot.sendMessage(chatId, "❌ Escribe así: /edit archivo: App.js tu cambio");
         return;
       }
 
-      prompt = `
-Eres un ingeniero senior.
+      const filePath = findFile(fileName);
 
-Modifica este código.
-
-Devuelve:
-1. Código nuevo completo
-2. Cambios en formato diff
-3. Explicación corta
-
-Código:
-${code}
-
-Instrucción:
-${text.replace("/edit", "")}
-`;
-    }
-
-    // 🔧 FIX
-    else if (text.startsWith("/fix")) {
-      prompt = `
-Corrige este código.
-
-Devuelve:
-1. Código corregido
-2. Explicación corta
-3. Cambios en formato diff
-
-Código:
-${text.replace("/fix", "")}
-`;
-    }
-
-    // 📘 EXPLAIN
-    else if (text.startsWith("/explain")) {
-      prompt = "Explica este código:\n" + text.replace("/explain", "");
-    }
-
-    // 🌐 ANALIZAR GITHUB
-    else if (text.includes("github.com")) {
-      const match = text.match(/https?:\/\/[^\s]+/);
-      let code = null;
-
-      if (match && match[0].includes("/blob/")) {
-        code = await getGitHubFile(match[0]);
+      if (!filePath) {
+        bot.sendMessage(chatId, "❌ No encontré ese archivo en el proyecto");
+        return;
       }
 
-      prompt = `
-Analiza este código:
+      const code = fs.readFileSync(filePath, "utf-8");
 
-${code || text}
+      const instruction = text.replace(/\/edit/i, "");
 
-Dame errores y mejoras.
+      const prompt = `
+Eres un ingeniero senior experto.
+
+Tienes este archivo:
+
+${code}
+
+El usuario quiere esto:
+${instruction}
+
+Devuelve:
+1. Código completo corregido
+2. Explicación corta
 `;
+
+      const response = await openai.responses.create({
+        model: "gpt-5-mini",
+        input: prompt,
+        max_output_tokens: 800,
+      });
+
+      const reply = response.output_text || "Error 😢";
+
+      bot.sendMessage(chatId, reply);
     }
 
-    // ⚡ NORMAL
+    // NORMAL
     else {
-      prompt = "Responde como programador experto:\n" + text;
+      const response = await openai.responses.create({
+        model: "gpt-5-nano",
+        input: text,
+      });
+
+      bot.sendMessage(chatId, response.output_text);
     }
-
-    let model = "gpt-5-mini";
-    let maxTokens = 600;
-
-    const response = await openai.responses.create({
-      model: model,
-      input: prompt,
-      max_output_tokens: maxTokens,
-    });
-
-    const reply = response.output_text || "Error 😢";
-
-    bot.sendMessage(chatId, reply);
 
   } catch (err) {
-    console.log("ERROR REAL:", err);
-    bot.sendMessage(chatId, "Error 😢 revisa logs");
+    console.log(err);
+    bot.sendMessage(chatId, "Error 😢");
   }
 });
 
