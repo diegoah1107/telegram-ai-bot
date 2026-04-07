@@ -12,9 +12,9 @@ const PORT = process.env.PORT || 3000;
 
 // 💰 CONTROL DE COSTO
 let totalTokens = 0;
-const MAX_TOKENS = 200000; // aprox $7 USD
+const MAX_TOKENS = 200000;
 
-// 🔥 FUNCIÓN PARA LEER ARCHIVOS DE GITHUB
+// 🔥 LEER ARCHIVOS DE GITHUB
 async function getGitHubFile(url) {
   try {
     const rawUrl = url
@@ -28,20 +28,18 @@ async function getGitHubFile(url) {
   }
 }
 
-// 🔥 BOT
+// 🤖 BOT
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text || "";
 
-  // 🚨 límite alcanzado
   if (totalTokens > MAX_TOKENS) {
-    bot.sendMessage(chatId, "⚠️ Límite mensual alcanzado (~$7 USD)");
+    bot.sendMessage(chatId, "⚠️ Límite mensual alcanzado");
     return;
   }
 
   let prompt = "";
 
-  // 🔥 GITHUB (repos o archivos)
   if (text.includes("github.com")) {
     let code = "";
 
@@ -50,32 +48,24 @@ bot.on("message", async (msg) => {
     }
 
     prompt = `
-Actúa como ingeniero senior.
+Actúa como programador experto.
 
-${code ? "Aquí está el código:\n" + code : "Analiza este repositorio: " + text}
+${code ? "Analiza este código:\n" + code : "Analiza este repo: " + text}
 
-Dame:
-- errores
-- mejoras
-- código corregido
-
-Responde directo sin relleno.
+Dame errores y mejoras.
+Responde directo.
 `;
   }
   else if (text.startsWith("/fix")) {
-    prompt = "Corrige este código y explica corto:\n" + text.replace("/fix", "");
+    prompt = "Corrige este código:\n" + text.replace("/fix", "");
   } 
   else if (text.startsWith("/explain")) {
-    prompt = "Explica este código fácil y corto:\n" + text.replace("/explain", "");
-  } 
-  else if (text.startsWith("/optimize")) {
-    prompt = "Optimiza este código:\n" + text.replace("/optimize", "");
+    prompt = "Explica este código:\n" + text.replace("/explain", "");
   } 
   else {
-    prompt = "Responde como programador experto:\n" + text;
+    prompt = text;
   }
 
-  // ⚡ MODELO HÍBRIDO + TOKENS INTELIGENTES
   let model = "gpt-5-nano";
   let maxTokens = 300;
 
@@ -91,26 +81,25 @@ Responde directo sin relleno.
       max_output_tokens: maxTokens,
     });
 
-    // 💰 sumar tokens
     if (response.usage) {
       totalTokens += response.usage.total_tokens;
     }
 
-    const reply = response.output_text || "No pude generar respuesta 😢";
+    const reply = response.output_text || "Error 😢";
 
     bot.sendMessage(chatId, reply);
 
   } catch (err) {
-    console.log("ERROR:", err);
-    bot.sendMessage(chatId, "Error 😢 revisa logs");
+    console.log(err);
+    bot.sendMessage(chatId, "Error 😢");
   }
 });
 
-// 🌐 SERVIDOR (Render)
+// 🌐 SERVIDOR
 app.get("/", (req, res) => {
   res.send("Bot activo 🚀");
 });
 
 app.listen(PORT, () => {
-  console.log("Servidor web corriendo en puerto " + PORT);
+  console.log("Servidor corriendo en puerto " + PORT);
 });
