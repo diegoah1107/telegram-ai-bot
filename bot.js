@@ -47,7 +47,7 @@ bot.on("message", async (msg) => {
         return;
       }
 
-      const filePath = findFile(fileName);
+      const filePath = findFile(fileName, "./frontend");
 
       if (!filePath) {
         bot.sendMessage(chatId, "❌ No encontré ese archivo en el proyecto");
