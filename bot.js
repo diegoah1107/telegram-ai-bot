@@ -14,16 +14,26 @@ const PORT = process.env.PORT || 3000;
 let totalTokens = 0;
 const MAX_TOKENS = 200000;
 
-// 🔥 LEER ARCHIVOS DE GITHUB
+// 🔥 LEER ARCHIVOS DE GITHUB (MEJORADO)
 async function getGitHubFile(url) {
   try {
+    if (!url.includes("/blob/")) return null;
+
     const rawUrl = url
-      .replace("github.com", "raw.githubusercontent.com")
+      .replace("https://github.com/", "https://raw.githubusercontent.com/")
       .replace("/blob/", "/");
 
     const res = await fetch(rawUrl);
-    return await res.text();
+
+    if (!res.ok) {
+      console.log("Error al obtener archivo:", res.status);
+      return null;
+    }
+
+    const text = await res.text();
+    return text;
   } catch (err) {
+    console.log("Error fetch:", err);
     return null;
   }
 }
@@ -33,7 +43,6 @@ bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text || "";
 
-  // 🚨 límite mensual
   if (totalTokens > MAX_TOKENS) {
     bot.sendMessage(chatId, "⚠️ Límite mensual alcanzado (~$7 USD)");
     return;
@@ -41,23 +50,29 @@ bot.on("message", async (msg) => {
 
   let prompt = "";
 
-  // 🔥 GITHUB
-  if (text.includes("github.com")) {
+  // 🔧 EDIT
+  if (text.startsWith("/edit")) {
     let code = "";
+    const match = text.match(/https?:\/\/[^\s]+/);
 
-    if (text.includes("/blob/")) {
-      code = await getGitHubFile(text);
+    if (match && match[0].includes("github.com")) {
+      code = await getGitHubFile(match[0]);
     }
 
     prompt = `
-Actúa como ingeniero senior.
+Eres un ingeniero senior.
 
-${code ? "Analiza este código:\n" + code : "Analiza este repositorio: " + text}
+Modifica este código según la instrucción.
 
-Dame:
-- errores
-- mejoras
-- código corregido
+Devuelve:
+1. Código nuevo completo
+2. Cambios en formato diff
+3. Explicación corta
+
+${code ? "Código:\n" + code : "No se pudo leer el archivo"}
+
+Instrucción:
+${text.replace("/edit", "")}
 `;
   }
 
@@ -76,51 +91,37 @@ ${text.replace("/fix", "")}
 `;
   }
 
-  // 🧠 EDIT (NUEVO PRO)
-  else if (text.startsWith("/edit")) {
-    let code = "";
+  // 📘 EXPLAIN
+  else if (text.startsWith("/explain")) {
+    prompt = "Explica este código:\n" + text.replace("/explain", "");
+  }
 
-    // si incluye github
-    if (text.includes("github.com") && text.includes("/blob/")) {
-      code = await getGitHubFile(text);
+  // 🌐 GITHUB NORMAL
+  else if (text.includes("github.com")) {
+    let code = "";
+    const match = text.match(/https?:\/\/[^\s]+/);
+
+    if (match && match[0].includes("/blob/")) {
+      code = await getGitHubFile(match[0]);
     }
 
     prompt = `
-Eres un ingeniero senior.
+Analiza este código:
 
-Modifica este código según la instrucción.
+${code || text}
 
-Devuelve:
-1. Código nuevo completo
-2. Cambios en formato diff
-3. Explicación corta
-
-${code ? "Código:\n" + code : ""}
-
-Instrucción:
-${text.replace("/edit", "")}
+Dame errores y mejoras.
 `;
   }
 
-  // 📘 EXPLAIN
-  else if (text.startsWith("/explain")) {
-    prompt = "Explica este código fácil:\n" + text.replace("/explain", "");
-  }
-
-  // ⚡ NORMAL
   else {
     prompt = "Responde como programador experto:\n" + text;
   }
 
-  // ⚡ MODELO INTELIGENTE
   let model = "gpt-5-nano";
   let maxTokens = 300;
 
-  if (
-    text.includes("github.com") ||
-    text.startsWith("/fix") ||
-    text.startsWith("/edit")
-  ) {
+  if (text.startsWith("/edit") || text.startsWith("/fix") || text.includes("github.com")) {
     model = "gpt-5-mini";
     maxTokens = 600;
   }
@@ -137,12 +138,11 @@ ${text.replace("/edit", "")}
     }
 
     const reply = response.output_text || "Error 😢";
-
     bot.sendMessage(chatId, reply);
 
   } catch (err) {
-    console.log("ERROR:", err);
-    bot.sendMessage(chatId, "Error 😢 revisa logs");
+    console.log(err);
+    bot.sendMessage(chatId, "Error 😢");
   }
 });
 
