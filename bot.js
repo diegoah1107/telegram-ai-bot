@@ -14,11 +14,9 @@ const PORT = process.env.PORT || 3000;
 let totalTokens = 0;
 const MAX_TOKENS = 200000;
 
-// 🔥 LEER ARCHIVOS DE GITHUB (MEJORADO)
+// 🔥 LEER ARCHIVOS DE GITHUB
 async function getGitHubFile(url) {
   try {
-    if (!url.includes("/blob/")) return null;
-
     const rawUrl = url
       .replace("https://github.com/", "https://raw.githubusercontent.com/")
       .replace("/blob/", "/");
@@ -26,14 +24,13 @@ async function getGitHubFile(url) {
     const res = await fetch(rawUrl);
 
     if (!res.ok) {
-      console.log("Error al obtener archivo:", res.status);
+      console.log("GitHub error:", res.status);
       return null;
     }
 
-    const text = await res.text();
-    return text;
+    return await res.text();
   } catch (err) {
-    console.log("Error fetch:", err);
+    console.log("Fetch error:", err);
     return null;
   }
 }
@@ -43,42 +40,49 @@ bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text || "";
 
-  if (totalTokens > MAX_TOKENS) {
-    bot.sendMessage(chatId, "⚠️ Límite mensual alcanzado (~$7 USD)");
-    return;
-  }
-
-  let prompt = "";
-
-  // 🔧 EDIT
-  if (text.startsWith("/edit")) {
-    let code = "";
-    const match = text.match(/https?:\/\/[^\s]+/);
-
-    if (match && match[0].includes("github.com")) {
-      code = await getGitHubFile(match[0]);
+  try {
+    if (totalTokens > MAX_TOKENS) {
+      bot.sendMessage(chatId, "⚠️ Límite mensual alcanzado");
+      return;
     }
 
-    prompt = `
+    let prompt = "";
+
+    // 🔧 EDIT
+    if (text.startsWith("/edit")) {
+      const match = text.match(/https?:\/\/[^\s]+/);
+      let code = null;
+
+      if (match) {
+        code = await getGitHubFile(match[0]);
+      }
+
+      if (!code) {
+        bot.sendMessage(chatId, "❌ No pude leer el archivo. Verifica el link.");
+        return;
+      }
+
+      prompt = `
 Eres un ingeniero senior.
 
-Modifica este código según la instrucción.
+Modifica este código.
 
 Devuelve:
 1. Código nuevo completo
 2. Cambios en formato diff
 3. Explicación corta
 
-${code ? "Código:\n" + code : "No se pudo leer el archivo"}
+Código:
+${code}
 
 Instrucción:
 ${text.replace("/edit", "")}
 `;
-  }
+    }
 
-  // 🔧 FIX
-  else if (text.startsWith("/fix")) {
-    prompt = `
+    // 🔧 FIX
+    else if (text.startsWith("/fix")) {
+      prompt = `
 Corrige este código.
 
 Devuelve:
@@ -89,60 +93,51 @@ Devuelve:
 Código:
 ${text.replace("/fix", "")}
 `;
-  }
-
-  // 📘 EXPLAIN
-  else if (text.startsWith("/explain")) {
-    prompt = "Explica este código:\n" + text.replace("/explain", "");
-  }
-
-  // 🌐 GITHUB NORMAL
-  else if (text.includes("github.com")) {
-    let code = "";
-    const match = text.match(/https?:\/\/[^\s]+/);
-
-    if (match && match[0].includes("/blob/")) {
-      code = await getGitHubFile(match[0]);
     }
 
-    prompt = `
+    // 📘 EXPLAIN
+    else if (text.startsWith("/explain")) {
+      prompt = "Explica este código:\n" + text.replace("/explain", "");
+    }
+
+    // 🌐 GITHUB
+    else if (text.includes("github.com")) {
+      const match = text.match(/https?:\/\/[^\s]+/);
+      let code = null;
+
+      if (match && match[0].includes("/blob/")) {
+        code = await getGitHubFile(match[0]);
+      }
+
+      prompt = `
 Analiza este código:
 
 ${code || text}
 
 Dame errores y mejoras.
 `;
-  }
+    }
 
-  else {
-    prompt = "Responde como programador experto:\n" + text;
-  }
+    else {
+      prompt = "Responde como programador experto:\n" + text;
+    }
 
-  let model = "gpt-5-nano";
-  let maxTokens = 300;
+    let model = "gpt-5-mini";
+    let maxTokens = 600;
 
-  if (text.startsWith("/edit") || text.startsWith("/fix") || text.includes("github.com")) {
-    model = "gpt-5-mini";
-    maxTokens = 600;
-  }
-
-  try {
     const response = await openai.responses.create({
       model: model,
       input: prompt,
       max_output_tokens: maxTokens,
     });
 
-    if (response.usage) {
-      totalTokens += response.usage.total_tokens;
-    }
+    const reply = response.output_text || "No hubo respuesta";
 
-    const reply = response.output_text || "Error 😢";
     bot.sendMessage(chatId, reply);
 
   } catch (err) {
-    console.log(err);
-    bot.sendMessage(chatId, "Error 😢");
+    console.log("ERROR REAL:", err);
+    bot.sendMessage(chatId, "Error 😢 revisa logs");
   }
 });
 
