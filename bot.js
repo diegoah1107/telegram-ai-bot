@@ -14,7 +14,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// 🌐 SERVER
+// 🌐 SERVER (Render fix)
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -29,12 +29,10 @@ app.listen(PORT, () => {
 // 🗄️ DATABASE
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: { rejectUnauthorized: false },
 });
 
-// crear tabla si no existe
+// crear tabla
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -46,7 +44,6 @@ async function initDB() {
     );
   `);
 }
-
 initDB();
 
 // guardar mensaje
@@ -57,14 +54,43 @@ async function saveMessage(chatId, role, content) {
   );
 }
 
-// obtener últimos mensajes
+// obtener memoria
 async function getMemory(chatId) {
   const res = await pool.query(
-    "SELECT role, content FROM messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT 10",
+    "SELECT role, content FROM messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT 12",
     [chatId]
   );
-
   return res.rows.reverse();
+}
+
+// 🧠 DETECTOR INTELIGENTE
+function detectModel(text) {
+  const t = text.toLowerCase();
+
+  const isError =
+    t.includes("error") ||
+    t.includes("bug") ||
+    t.includes("no funciona") ||
+    t.includes("fix") ||
+    t.includes("arreglar");
+
+  const isCode =
+    t.includes("react") ||
+    t.includes("node") ||
+    t.includes("javascript") ||
+    t.includes("api") ||
+    t.includes("backend") ||
+    t.includes("frontend");
+
+  const isAdvanced =
+    t.includes("arquitectura") ||
+    t.includes("escalable") ||
+    t.includes("sistema completo");
+
+  if (isAdvanced) return "gpt-5-mini";
+  if (isError || isCode) return "gpt-4o-mini";
+
+  return "gpt-5-nano";
 }
 
 // 💬 MENSAJES
@@ -73,35 +99,52 @@ bot.on("message", async (msg) => {
   const text = msg.text || "";
 
   try {
-    // guardar mensaje usuario
+    // guardar usuario
     await saveMessage(chatId, "user", text);
 
-    // obtener memoria
+    // memoria
     const memory = await getMemory(chatId);
 
     // detectar prompt
-    const isPrompt = text.toLowerCase().includes("prompt");
+    const isPrompt =
+      text.toLowerCase().includes("prompt") ||
+      text.toLowerCase().includes("hazme");
 
+    // sistema
     const systemMessage = isPrompt
       ? {
           role: "system",
           content: `
-Eres experto en prompts para programación.
-Crea prompts claros, detallados y útiles.
+Eres un experto en prompts para programación.
+
+Convierte cualquier problema en un prompt perfecto para IA que incluya:
+- contexto claro
+- problema detallado
+- solución esperada
+- código si aplica
+- instrucciones precisas
+
+Entrega SOLO el prompt listo para copiar.
           `,
         }
       : {
           role: "system",
-          content: "Responde como experto en programación.",
+          content: `
+Eres un ingeniero senior experto en:
+- React
+- Node.js
+- APIs
+- debugging
+
+Responde claro, directo, útil y sin relleno.
+Si es código:
+- da solución completa
+- explica breve
+          `,
         };
 
-    // elegir modelo
-    const isComplex =
-      text.includes("error") ||
-      text.includes("bug") ||
-      text.includes("no funciona");
-
-    const model = isComplex ? "gpt-4o-mini" : "gpt-5-nano";
+    // modelo inteligente
+    const model = detectModel(text);
 
     const completion = await openai.chat.completions.create({
       model: model,
@@ -117,7 +160,7 @@ Crea prompts claros, detallados y útiles.
     bot.sendMessage(chatId, reply);
 
   } catch (err) {
-    console.log(err);
+    console.log("❌ ERROR:", err);
     bot.sendMessage(chatId, "Error 😢");
   }
 });
