@@ -10,6 +10,7 @@
     "express": "^5.2.1",
     "fs": "^0.0.1-security",
     "node-telegram-bot-api": "^0.66.0",
-    "openai": "^4.0.0"
+    "openai": "^4.0.0",
+    "pg": "^8.20.0"
   }
 }

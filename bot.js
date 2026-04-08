@@ -2,7 +2,7 @@ require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
 const OpenAI = require("openai");
 const express = require("express");
-const fs = require("fs");
+const { Pool } = require("pg");
 
 // 🤖 BOT
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, {
@@ -14,7 +14,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// 🌐 SERVER (Render)
+// 🌐 SERVER
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -26,60 +26,76 @@ app.listen(PORT, () => {
   console.log("Servidor corriendo en puerto " + PORT);
 });
 
-// 📁 MEMORIA
-const MEMORY_FILE = "memory.json";
+// 🗄️ DATABASE
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+});
 
-// cargar memoria
-function loadMemory() {
-  if (!fs.existsSync(MEMORY_FILE)) return {};
-  return JSON.parse(fs.readFileSync(MEMORY_FILE));
+// crear tabla si no existe
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id SERIAL PRIMARY KEY,
+      chat_id TEXT,
+      role TEXT,
+      content TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 }
 
-// guardar memoria
-function saveMemory(data) {
-  fs.writeFileSync(MEMORY_FILE, JSON.stringify(data, null, 2));
+initDB();
+
+// guardar mensaje
+async function saveMessage(chatId, role, content) {
+  await pool.query(
+    "INSERT INTO messages (chat_id, role, content) VALUES ($1, $2, $3)",
+    [chatId, role, content]
+  );
+}
+
+// obtener últimos mensajes
+async function getMemory(chatId) {
+  const res = await pool.query(
+    "SELECT role, content FROM messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT 10",
+    [chatId]
+  );
+
+  return res.rows.reverse();
 }
 
 // 💬 MENSAJES
 bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
+  const chatId = msg.chat.id.toString();
   const text = msg.text || "";
 
   try {
-    let memory = loadMemory();
-
-    if (!memory[chatId]) {
-      memory[chatId] = [];
-    }
-
     // guardar mensaje usuario
-    memory[chatId].push({ role: "user", content: text });
+    await saveMessage(chatId, "user", text);
 
-    // limitar memoria (últimos 10 mensajes)
-    memory[chatId] = memory[chatId].slice(-10);
+    // obtener memoria
+    const memory = await getMemory(chatId);
 
-    // 🔥 detectar si quiere prompt
+    // detectar prompt
     const isPrompt = text.toLowerCase().includes("prompt");
 
     const systemMessage = isPrompt
       ? {
           role: "system",
           content: `
-Eres un experto en prompts para programación.
-
-Convierte el problema en un prompt perfecto que incluya:
-- contexto
-- solución
-- código
-- explicación
+Eres experto en prompts para programación.
+Crea prompts claros, detallados y útiles.
           `,
         }
       : {
           role: "system",
-          content: "Responde claro, útil y como experto.",
+          content: "Responde como experto en programación.",
         };
 
-    // 🧠 elegir modelo inteligente
+    // elegir modelo
     const isComplex =
       text.includes("error") ||
       text.includes("bug") ||
@@ -89,16 +105,14 @@ Convierte el problema en un prompt perfecto que incluya:
 
     const completion = await openai.chat.completions.create({
       model: model,
-      messages: [systemMessage, ...memory[chatId]],
+      messages: [systemMessage, ...memory],
     });
 
     const reply =
       completion.choices[0]?.message?.content || "Sin respuesta";
 
     // guardar respuesta
-    memory[chatId].push({ role: "assistant", content: reply });
-
-    saveMemory(memory);
+    await saveMessage(chatId, "assistant", reply);
 
     bot.sendMessage(chatId, reply);
 
