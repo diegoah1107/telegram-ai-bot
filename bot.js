@@ -1,6 +1,7 @@
 require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
 const OpenAI = require("openai");
+const express = require("express");
 
 // 🤖 BOT
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, {
@@ -12,6 +13,19 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// 🌐 SERVIDOR (ESTO ARREGLA RENDER)
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("Bot activo 🚀");
+});
+
+app.listen(PORT, () => {
+  console.log("Servidor corriendo en puerto " + PORT);
+});
+
+// 💬 MENSAJES
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text || "";
@@ -26,6 +40,7 @@ bot.on("message", async (msg) => {
       chatId,
       completion.choices[0]?.message?.content || "Sin respuesta"
     );
+
   } catch (err) {
     console.log(err);
     bot.sendMessage(chatId, "Error 😢");
