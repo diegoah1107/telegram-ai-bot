@@ -1,20 +1,13 @@
 {
-  "name": "bot-telegram-ai",
+  "name": "telegram-ai-bot",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "main": "bot.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node bot.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "dotenv": "^17.4.1",
-    "express": "^5.2.1",
-    "node-fetch": "^3.3.2",
-    "node-telegram-bot-api": "^0.67.0",
-    "openai": "^6.33.0"
+    "node-telegram-bot-api": "^0.66.0",
+    "openai": "^4.0.0",
+    "dotenv": "^16.0.0"
   }
 }
