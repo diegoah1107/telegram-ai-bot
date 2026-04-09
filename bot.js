@@ -14,25 +14,20 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// 🌐 SERVER (Render)
+// 🌐 SERVER
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get("/", (req, res) => {
-  res.send("Jarvis activo 🚀");
-});
+app.get("/", (req, res) => res.send("Jarvis activo 🚀"));
+app.listen(PORT, () => console.log("Servidor corriendo"));
 
-app.listen(PORT, () => {
-  console.log("Servidor corriendo en puerto " + PORT);
-});
-
-// 🗄️ DATABASE
+// 🗄️ DB
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// 🔥 CREAR TABLAS
+// INIT
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -55,15 +50,14 @@ async function initDB() {
 }
 initDB();
 
-// 💾 GUARDAR MENSAJES
+// SAVE
 async function saveMessage(chatId, role, content) {
   await pool.query(
-    "INSERT INTO messages (chat_id, role, content) VALUES ($1, $2, $3)",
+    "INSERT INTO messages (chat_id, role, content) VALUES ($1,$2,$3)",
     [chatId, role, content]
   );
 }
 
-// 📜 OBTENER HISTORIAL
 async function getMemory(chatId) {
   const res = await pool.query(
     "SELECT role, content FROM messages WHERE chat_id=$1 ORDER BY created_at DESC LIMIT 12",
@@ -72,7 +66,6 @@ async function getMemory(chatId) {
   return res.rows.reverse();
 }
 
-// 🧠 MEMORIA INTELIGENTE (tipo notas)
 async function saveNote(chatId, key, value) {
   await pool.query(
     "INSERT INTO memory (chat_id, key, value) VALUES ($1,$2,$3)",
@@ -88,26 +81,17 @@ async function getNotes(chatId) {
   return res.rows;
 }
 
-// 🧠 DETECTOR MODELO
+// 🧠 DETECTORES
 function detectModel(text) {
   const t = text.toLowerCase();
 
-  if (
-    t.includes("arquitectura") ||
-    t.includes("sistema completo")
-  ) return "gpt-5-mini";
-
-  if (
-    t.includes("error") ||
-    t.includes("bug") ||
-    t.includes("react") ||
-    t.includes("node")
-  ) return "gpt-4o-mini";
+  if (t.includes("arquitectura")) return "gpt-5-mini";
+  if (t.includes("error") || t.includes("bug") || t.includes("react"))
+    return "gpt-4o-mini";
 
   return "gpt-5-nano";
 }
 
-// 🧠 DETECTOR MEMORIA IMPORTANTE
 function detectImportant(text) {
   const t = text.toLowerCase();
 
@@ -123,81 +107,89 @@ bot.on("message", async (msg) => {
   const chatId = msg.chat.id.toString();
   const text = msg.text || "";
 
+  // 👇 RESPUESTA INMEDIATA (CLAVE)
   bot.sendChatAction(chatId, "typing");
 
   try {
     await saveMessage(chatId, "user", text);
 
-    // 🧠 GUARDAR INFO IMPORTANTE
+    // guardar info importante
     const key = detectImportant(text);
-    if (key) {
-      await saveNote(chatId, key, text);
-    }
+    if (key) await saveNote(chatId, key, text);
 
     const memory = await getMemory(chatId);
     const notes = await getNotes(chatId);
 
-    // 🧠 CONSTRUIR CONTEXTO
     const contextNotes = notes.map(n => `${n.key}: ${n.value}`).join("\n");
 
     const lower = text.toLowerCase();
 
     const isPrompt =
       lower.includes("prompt") ||
-      lower.includes("hazme un prompt") ||
-      lower.includes("genera un prompt");
+      lower.includes("hazme un prompt");
 
-    // 🤖 JARVIS PERSONALIDAD
+    // 🧠 PERSONALIDAD HUMANA + PRO
     const systemMessage = {
       role: "system",
       content: isPrompt
         ? `
-Eres Jarvis, experto en prompts avanzados.
+Eres Jarvis.
 
-Convierte el problema en un prompt perfecto.
+Convierte lo que diga el usuario en un prompt perfecto.
+
+Contexto:
+${contextNotes}
+
+Hazlo claro, natural y potente.
+Entrega solo el prompt.
+`
+        : `
+Eres Jarvis, un asistente personal inteligente y cercano.
+
+Tu estilo:
+- hablas como amigo (natural, relajado)
+- pero cuando toca, eres experto en programación
+- entiendes contexto del usuario
+- no eres robot
 
 Contexto del usuario:
 ${contextNotes}
 
-Entrega un prompt listo para copiar.
-Natural, claro, poderoso.
-`
-        : `
-Eres Jarvis, asistente personal inteligente.
-
-Hablas como humano, no robot.
-Eres claro, directo y útil.
-
-Conoces al usuario:
-${contextNotes}
-
 Reglas:
-- sé natural
-- responde como experto real
-- si es código: solución completa
-- explica breve
-- guía paso a paso si hace falta
+- si es casual → responde como amigo
+- si es código → responde como dev senior
+- sé claro, útil y directo
+- no des respuestas genéricas
 `,
     };
 
     const model = detectModel(text);
 
-    let reply = "";
+    // 🔁 REINTENTO AUTOMÁTICO
+    async function getAIResponse() {
+      try {
+        const completion = await openai.chat.completions.create({
+          model,
+          messages: [systemMessage, ...memory],
+        });
 
-    try {
-      const completion = await openai.chat.completions.create({
-        model,
-        messages: [systemMessage, ...memory],
-      });
+        return completion?.choices?.[0]?.message?.content?.trim();
+      } catch (err) {
+        console.log("OpenAI error:", err.message);
+        return null;
+      }
+    }
 
-      reply =
-        completion?.choices?.[0]?.message?.content?.trim() || "";
-    } catch (err) {
-      console.log("OpenAI error:", err.message);
+    let reply = await getAIResponse();
+
+    // 🔁 retry si falla
+    if (!reply) {
+      console.log("Reintentando...");
+      reply = await getAIResponse();
     }
 
     if (!reply) {
-      reply = "⚠️ No pude responder bien, intenta reformular.";
+      reply = "😅 Se me fue la onda un segundo, intenta otra vez";
     }
 
     await saveMessage(chatId, "assistant", reply);
