@@ -4,7 +4,7 @@ const OpenAI = require("openai");
 const express = require("express");
 const { Pool } = require("pg");
 
-// 🤖 BOT
+// 🤖 TELEGRAM BOT
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, {
   polling: true,
 });
@@ -14,20 +14,25 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// 🌐 SERVER
+// 🌐 SERVER PARA RENDER
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get("/", (req, res) => res.send("Jarvis activo 🚀"));
-app.listen(PORT, () => console.log("Servidor corriendo"));
+app.get("/", (req, res) => {
+  res.send("Jarvis activo 🚀");
+});
 
-// 🗄️ DB
+app.listen(PORT, () => {
+  console.log("Servidor corriendo en puerto " + PORT);
+});
+
+// 🗄️ BASE DE DATOS
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// INIT
+// 🔥 CREAR TABLAS
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -50,7 +55,7 @@ async function initDB() {
 }
 initDB();
 
-// SAVE
+// 💾 GUARDAR MENSAJES
 async function saveMessage(chatId, role, content) {
   await pool.query(
     "INSERT INTO messages (chat_id, role, content) VALUES ($1,$2,$3)",
@@ -58,6 +63,7 @@ async function saveMessage(chatId, role, content) {
   );
 }
 
+// 📜 OBTENER HISTORIAL
 async function getMemory(chatId) {
   const res = await pool.query(
     "SELECT role, content FROM messages WHERE chat_id=$1 ORDER BY created_at DESC LIMIT 12",
@@ -66,6 +72,7 @@ async function getMemory(chatId) {
   return res.rows.reverse();
 }
 
+// 🧠 GUARDAR DATOS IMPORTANTES
 async function saveNote(chatId, key, value) {
   await pool.query(
     "INSERT INTO memory (chat_id, key, value) VALUES ($1,$2,$3)",
@@ -73,6 +80,7 @@ async function saveNote(chatId, key, value) {
   );
 }
 
+// 🧠 OBTENER DATOS IMPORTANTES
 async function getNotes(chatId) {
   const res = await pool.query(
     "SELECT key, value FROM memory WHERE chat_id=$1",
@@ -81,17 +89,25 @@ async function getNotes(chatId) {
   return res.rows;
 }
 
-// 🧠 DETECTORES
+// 🧠 DETECTAR MODELO
 function detectModel(text) {
   const t = text.toLowerCase();
 
   if (t.includes("arquitectura")) return "gpt-5-mini";
-  if (t.includes("error") || t.includes("bug") || t.includes("react"))
+
+  if (
+    t.includes("error") ||
+    t.includes("bug") ||
+    t.includes("react") ||
+    t.includes("node")
+  ) {
     return "gpt-4o-mini";
+  }
 
   return "gpt-5-nano";
 }
 
+// 🧠 DETECTAR INFO IMPORTANTE
 function detectImportant(text) {
   const t = text.toLowerCase();
 
@@ -102,12 +118,22 @@ function detectImportant(text) {
   return null;
 }
 
+// 🔥 COLA PARA EVITAR BLOQUEOS
+const processing = new Set();
+
 // 💬 MENSAJES
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id.toString();
   const text = msg.text || "";
 
-  // 👇 RESPUESTA INMEDIATA (CLAVE)
+  // evitar mensajes simultáneos
+  if (processing.has(chatId)) {
+    console.log("⏳ Esperando turno...");
+    return;
+  }
+
+  processing.add(chatId);
+
   bot.sendChatAction(chatId, "typing");
 
   try {
@@ -115,7 +141,9 @@ bot.on("message", async (msg) => {
 
     // guardar info importante
     const key = detectImportant(text);
-    if (key) await saveNote(chatId, key, text);
+    if (key) {
+      await saveNote(chatId, key, text);
+    }
 
     const memory = await getMemory(chatId);
     const notes = await getNotes(chatId);
@@ -128,29 +156,25 @@ bot.on("message", async (msg) => {
       lower.includes("prompt") ||
       lower.includes("hazme un prompt");
 
-    // 🧠 PERSONALIDAD HUMANA + PRO
+    // 🧠 PERSONALIDAD JARVIS
     const systemMessage = {
       role: "system",
       content: isPrompt
         ? `
-Eres Jarvis.
+Eres Jarvis, experto en prompts.
 
 Convierte lo que diga el usuario en un prompt perfecto.
 
-Contexto:
+Contexto del usuario:
 ${contextNotes}
 
-Hazlo claro, natural y potente.
-Entrega solo el prompt.
+Entrega SOLO el prompt, claro, natural y potente.
 `
         : `
-Eres Jarvis, un asistente personal inteligente y cercano.
+Eres Jarvis, asistente personal inteligente.
 
-Tu estilo:
-- hablas como amigo (natural, relajado)
-- pero cuando toca, eres experto en programación
-- entiendes contexto del usuario
-- no eres robot
+Hablas como humano (no robot).
+Eres cercano, pero también experto en programación.
 
 Contexto del usuario:
 ${contextNotes}
@@ -158,46 +182,52 @@ ${contextNotes}
 Reglas:
 - si es casual → responde como amigo
 - si es código → responde como dev senior
-- sé claro, útil y directo
-- no des respuestas genéricas
+- sé claro y útil
 `,
     };
 
     const model = detectModel(text);
 
-    // 🔁 REINTENTO AUTOMÁTICO
-    async function getAIResponse() {
-      try {
-        const completion = await openai.chat.completions.create({
-          model,
-          messages: [systemMessage, ...memory],
-        });
+    let replied = false;
 
-        return completion?.choices?.[0]?.message?.content?.trim();
-      } catch (err) {
-        console.log("OpenAI error:", err.message);
-        return null;
+    // ⏱️ timeout seguridad
+    const timeout = setTimeout(() => {
+      if (!replied) {
+        bot.sendMessage(chatId, "⚠️ Tardé mucho, intenta otra vez");
+        replied = true;
       }
+    }, 10000);
+
+    let reply = "";
+
+    try {
+      const completion = await openai.chat.completions.create({
+        model,
+        messages: [systemMessage, ...memory],
+      });
+
+      reply =
+        completion?.choices?.[0]?.message?.content?.trim() || "";
+    } catch (err) {
+      console.log("OpenAI error:", err.message);
     }
 
-    let reply = await getAIResponse();
+    clearTimeout(timeout);
 
-    // 🔁 retry si falla
     if (!reply) {
-      console.log("Reintentando...");
-      reply = await getAIResponse();
+      reply = "😅 No pude responder bien, intenta otra vez";
     }
 
-    if (!reply) {
-      reply = "😅 Se me fue la onda un segundo, intenta otra vez";
+    if (!replied) {
+      await saveMessage(chatId, "assistant", reply);
+      bot.sendMessage(chatId, reply);
+      replied = true;
     }
-
-    await saveMessage(chatId, "assistant", reply);
-
-    bot.sendMessage(chatId, reply);
 
   } catch (err) {
     console.log("ERROR:", err);
     bot.sendMessage(chatId, "Error 😢");
+  } finally {
+    processing.delete(chatId);
   }
 });
