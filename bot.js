@@ -10,7 +10,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// 🤖 TELEGRAM (SIN POLLING)
+// 🤖 BOT (SIN POLLING)
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN);
 
 // 🧠 OPENAI
@@ -24,7 +24,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// INIT DB
+// INIT
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -55,7 +55,7 @@ async function getMemory(chatId) {
   return res.rows.reverse();
 }
 
-// 🧠 MODELO
+// 🧠 DETECTAR MODELO
 function detectModel(text) {
   const t = text.toLowerCase();
 
@@ -63,7 +63,7 @@ function detectModel(text) {
   return "gpt-5-nano";
 }
 
-// 📩 WEBHOOK ENDPOINT
+// 📩 WEBHOOK
 app.post(`/webhook/${process.env.TELEGRAM_TOKEN}`, async (req, res) => {
   const msg = req.body.message;
 
@@ -80,16 +80,47 @@ app.post(`/webhook/${process.env.TELEGRAM_TOKEN}`, async (req, res) => {
     await saveMessage(chatId, "user", text);
     const memory = await getMemory(chatId);
 
-    const systemMessage = {
-      role: "system",
-      content: `
+    const lower = text.toLowerCase();
+
+    // 🔥 DETECTOR DE PROMPT MEJORADO
+    const isPrompt =
+      lower.includes("prompt") ||
+      lower.includes("hazme un prompt") ||
+      lower.includes("crea un prompt") ||
+      lower.includes("genera un prompt") ||
+      lower.includes("dame un prompt");
+
+    let systemMessage;
+
+    if (isPrompt) {
+      systemMessage = {
+        role: "system",
+        content: `
+Eres un experto en crear prompts para IA.
+
+Convierte lo que diga el usuario en un prompt PERFECTO.
+
+Debe incluir:
+- contexto claro
+- problema detallado
+- resultado esperado
+- instrucciones precisas
+
+Entrega SOLO el prompt listo para copiar.
+`,
+      };
+    } else {
+      systemMessage = {
+        role: "system",
+        content: `
 Eres Jarvis.
 
-Hablas como humano, eres cercano y también experto en programación.
+Hablas natural como humano y eres experto en programación.
 
-Responde claro, útil y natural.
+Responde claro, útil y sin rodeos.
 `,
-    };
+      };
+    }
 
     let reply = "";
 
@@ -105,8 +136,15 @@ Responde claro, útil y natural.
       console.log("OpenAI error:", err.message);
     }
 
+    // 🔥 SI VIENE VACÍO (CLAVE)
     if (!reply) {
-      reply = "😅 No pude responder bien, intenta otra vez";
+      if (isPrompt) {
+        reply =
+          "⚠️ No pude generar el prompt. Intenta describir mejor el problema.";
+      } else {
+        reply =
+          "😅 No pude responder bien, intenta escribirlo diferente.";
+      }
     }
 
     await saveMessage(chatId, "assistant", reply);
@@ -121,12 +159,11 @@ Responde claro, útil y natural.
   res.sendStatus(200);
 });
 
-// 🌐 HOME
+// HOME
 app.get("/", (req, res) => {
   res.send("Jarvis webhook activo 🚀");
 });
 
-// 🚀 START SERVER
 app.listen(PORT, () => {
   console.log("Servidor corriendo en puerto " + PORT);
 });
