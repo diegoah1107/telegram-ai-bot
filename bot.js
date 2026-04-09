@@ -32,7 +32,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// crear tabla
+// crear tabla si no existe
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -63,7 +63,7 @@ async function getMemory(chatId) {
   return res.rows.reverse();
 }
 
-// 🧠 DETECTOR INTELIGENTE
+// 🧠 DETECTOR DE MODELO
 function detectModel(text) {
   const t = text.toLowerCase();
 
@@ -98,17 +98,25 @@ bot.on("message", async (msg) => {
   const chatId = msg.chat.id.toString();
   const text = msg.text || "";
 
+  // 👇 evita que parezca congelado
+  bot.sendChatAction(chatId, "typing");
+
   try {
-    // guardar usuario
+    // guardar mensaje usuario
     await saveMessage(chatId, "user", text);
 
-    // memoria
+    // obtener memoria
     const memory = await getMemory(chatId);
 
-    // detectar prompt
+    const lower = text.toLowerCase();
+
+    // 🔥 detector de prompt mejorado
     const isPrompt =
-      text.toLowerCase().includes("prompt") ||
-      text.toLowerCase().includes("hazme");
+      lower.includes("prompt") ||
+      lower.includes("hazme un prompt") ||
+      lower.includes("crea un prompt") ||
+      lower.includes("genera un prompt") ||
+      lower.includes("dame un prompt");
 
     // sistema
     const systemMessage = isPrompt
@@ -117,7 +125,9 @@ bot.on("message", async (msg) => {
           content: `
 Eres un experto en prompts para programación.
 
-Convierte cualquier problema en un prompt perfecto para IA que incluya:
+Convierte el problema del usuario en un prompt perfecto para IA.
+
+Debe incluir:
 - contexto claro
 - problema detallado
 - solución esperada
@@ -136,23 +146,33 @@ Eres un ingeniero senior experto en:
 - APIs
 - debugging
 
-Responde claro, directo, útil y sin relleno.
+Responde claro, directo y útil.
 Si es código:
 - da solución completa
 - explica breve
           `,
         };
 
-    // modelo inteligente
     const model = detectModel(text);
 
-    const completion = await openai.chat.completions.create({
-      model: model,
-      messages: [systemMessage, ...memory],
-    });
+    let reply = "";
 
-    const reply =
-      completion.choices[0]?.message?.content || "Sin respuesta";
+    try {
+      const completion = await openai.chat.completions.create({
+        model: model,
+        messages: [systemMessage, ...memory],
+      });
+
+      reply =
+        completion?.choices?.[0]?.message?.content?.trim() || "";
+    } catch (error) {
+      console.log("❌ OpenAI error:", error.message);
+    }
+
+    // fallback
+    if (!reply) {
+      reply = "⚠️ El modelo no respondió. Intenta escribirlo diferente.";
+    }
 
     // guardar respuesta
     await saveMessage(chatId, "assistant", reply);
@@ -160,7 +180,7 @@ Si es código:
     bot.sendMessage(chatId, reply);
 
   } catch (err) {
-    console.log("❌ ERROR:", err);
-    bot.sendMessage(chatId, "Error 😢");
+    console.log("❌ ERROR GENERAL:", err);
+    bot.sendMessage(chatId, "Error 😢 revisa configuración");
   }
 });
